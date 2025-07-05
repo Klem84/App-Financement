@@ -1,12 +1,18 @@
 from modeles import (
     Utilisateur, Organisation, Projet, Livrable,
-    RoleUtilisateur, TypeOrganisation, StatutPipelineProjet, TypeLivrable, StatutValidationLivrable
+    RoleUtilisateur, TypeOrganisation, StatutPipelineProjet, TypeLivrable, StatutValidationLivrable,
+    Aide, TypeAide, NatureProjet, TypeStructureEntreprise, SecteurActivite, TailleEntreprise, LocalisationEntreprise # Pour Module 2
 )
 from services import (
     get_projets_par_statut, get_projets_recents, get_livrables_recents,
     update_statut_projet, add_aide_to_projet, create_livrable_pour_projet,
-    update_statut_livrable, get_projet_by_id, get_livrables_par_projet
+    update_statut_livrable, get_projet_by_id, get_livrables_par_projet,
+    get_organisation_by_id, get_utilisateurs_pour_organisation, get_projets_pour_organisation,
+    add_utilisateur_a_organisation, remove_utilisateur_de_organisation,
+    add_projet_a_organisation, remove_projet_de_organisation, update_organisation_info,
+    rechercher_aides, associer_aide_a_projet # Pour Module 2
 )
+from donnees_simulees import aides_simulees # Pour Module 2
 from datetime import datetime
 import time # Pour simuler des délais et rendre la génération d'ID unique plus robuste
 
@@ -98,14 +104,25 @@ def print_fiche_projet(projet: Projet, utilisateur_actuel: Utilisateur):
     # 🟨 SUIVI DES AIDES SÉLECTIONNÉES
     print("\n🟨 SUIVI DES AIDES SÉLECTIONNÉES")
     print("-"*50)
-    if projet.aides_identifiees:
+    if projet.aides_identifiees: # Maintenant une liste d'objets Aide
         print("Aides Actuelles:")
-        for i, aide in enumerate(projet.aides_identifiees):
-            print(f"  - Aide {i+1}: {aide.get('nom', 'N/A')} (Lien: {aide.get('lien', 'N/A')}, Remarque: {aide.get('remarque', 'N/A')})")
+        for i, aide_associee in enumerate(projet.aides_identifiees):
+            if isinstance(aide_associee, Aide): # Vérifier si c'est bien un objet Aide
+                print(f"  - Aide {i+1}: {aide_associee.nom} (ID: {aide_associee.id_aide})")
+                print(f"      Organisme: {aide_associee.organisme_financeur}, Type: {aide_associee.type_aide.value}")
+                if aide_associee.date_limite_depot:
+                    print(f"      Date Limite: {aide_associee.date_limite_depot.strftime('%d/%m/%Y')}")
+            elif isinstance(aide_associee, dict) : # Ancien format, si la transition n'est pas complète
+                print(f"  - Aide {i+1} (format dict): {aide_associee.get('nom', 'N/A')} (Lien: {aide_associee.get('lien', 'N/A')}, Remarque: {aide_associee.get('remarque', 'N/A')})")
+            else:
+                print(f"  - Aide {i+1}: format inconnu.")
+
     else:
         print("  Aucune aide sélectionnée pour ce projet.")
     print("  Actions possibles (Aides):")
-    print("    2. Ajouter une Aide")
+    # L'action "Ajouter une Aide" manuellement via la fiche projet devrait maintenant aussi utiliser associer_aide_a_projet
+    # ou une fonction qui crée un objet Aide. Pour l'instant, on se concentre sur l'association depuis la recherche.
+    print("    2. Ajouter une Aide (via recherche et association)")
 
     # 🟩 SUIVI DES LIVRABLES
     print("\n🟩 SUIVI DES LIVRABLES")
@@ -151,6 +168,94 @@ def print_fiche_projet(projet: Projet, utilisateur_actuel: Utilisateur):
         print("  Accès non défini pour cet utilisateur sur ce projet.")
 
     print("="*60 + "\n")
+
+def print_fiche_client(organisation: Organisation, utilisateur_actuel: Utilisateur):
+    """Affiche les informations de la fiche client (organisation) et les actions possibles."""
+    if not organisation:
+        print("Erreur: Impossible d'afficher la fiche d'une organisation non définie.")
+        return
+
+    print("\n" + "="*70)
+    print(f"FICHE CLIENT (ORGANISATION): {organisation.nom.upper()}")
+    print("="*70)
+
+    # 🟦 INFORMATIONS GÉNÉRALES DE L'ORGANISATION
+    print("\n🟦 INFORMATIONS GÉNÉRALES DE L'ORGANISATION")
+    print("-"*60)
+    print(f"Nom: {organisation.nom}")
+    print(f"ID Organisation: {organisation.id_organisation}")
+    print(f"Type: {organisation.type_org.value}")
+
+    projets_org = get_projets_pour_organisation(organisation, sort_by_update=False) # Pas besoin de trier juste pour compter
+    utilisateurs_org = get_utilisateurs_pour_organisation(organisation, sort_by_name=False) # Idem
+
+    print(f"Nombre Total de Projets Liés: {len(projets_org)}")
+    print(f"Nombre Total d'Utilisateurs Rattachés: {len(utilisateurs_org)}")
+    print("  Actions possibles (Organisation):")
+    print(f"    1. Modifier les informations de l'Organisation (Nom actuel: '{organisation.nom}', Type actuel: '{organisation.type_org.value}')")
+
+    # 🟨 UTILISATEURS ASSOCIÉS À L'ORGANISATION
+    print("\n🟨 UTILISATEURS ASSOCIÉS À L'ORGANISATION")
+    print("-"*60)
+    utilisateurs_tries = get_utilisateurs_pour_organisation(organisation) # Triés par nom
+    if utilisateurs_tries:
+        header_users = "| {:<20} | {:<25} | {:<10} | {:<12} | {:<20} |".format(
+            "Nom", "Email", "Rôle", "ID Utilisateur", "Dernière Connexion"
+        )
+        print(header_users)
+        print("-" * len(header_users))
+        for user in utilisateurs_tries:
+            derniere_co = user.derniere_connexion.strftime('%Y-%m-%d %H:%M') if user.derniere_connexion else "Jamais connecté"
+            row_user = "| {:<20} | {:<25} | {:<10} | {:<12} | {:<20} |".format(
+                user.nom, user.email, user.role.value, user.id_utilisateur, derniere_co
+            )
+            print(row_user)
+    else:
+        print("  Aucun utilisateur rattaché à cette organisation.")
+    print("  Actions possibles (Utilisateurs):")
+    print("    2. Ajouter un Utilisateur à l'Organisation")
+    if utilisateurs_tries : # On ne peut supprimer que s'il y en a
+        print(f"    3. Supprimer un Utilisateur de l'Organisation (ex: ID '{utilisateurs_tries[0].id_utilisateur}' si liste non vide)")
+
+
+    # 🟩 LISTE DES PROJETS DE L'ORGANISATION
+    print("\n🟩 LISTE DES PROJETS DE L'ORGANISATION")
+    print("-"*60)
+    projets_tries = get_projets_pour_organisation(organisation) # Triés par date de MàJ desc
+    if projets_tries:
+        print("  (Triés par date de mise à jour, décroissante)")
+        for i, projet in enumerate(projets_tries):
+            print(f"  --- Projet {i+1} ---")
+            print(f"    Titre: {projet.titre_projet} (ID: {projet.id_projet})")
+            print(f"    Consultant Référent: {projet.consultant_referent.nom if projet.consultant_referent else 'N/A'}")
+            print(f"    Statut Pipeline: {projet.statut_pipeline.value}")
+            print(f"    Dernière Mise à Jour: {projet.date_mise_a_jour.strftime('%Y-%m-%d %H:%M') if projet.date_mise_a_jour else 'N/A'}")
+            print(f"    Nombre de Livrables: {len(projet.livrables)}")
+            print(f"    (Lien simulé vers Fiche Projet -> Afficher Fiche Projet ID {projet.id_projet})")
+    else:
+        print("  Aucun projet lié à cette organisation.")
+    print("  Actions possibles (Projets):")
+    print("    4. Ajouter un Projet à l'Organisation")
+    if projets_tries: # On ne peut supprimer que s'il y en a
+        print(f"    5. Supprimer un Projet de l'Organisation (ex: ID '{projets_tries[0].id_projet}' si liste non vide)")
+
+    # Note sur l'accès utilisateur (similaire à Fiche Projet)
+    print("\n🔐 ACCÈS UTILISATEUR (Simulation)")
+    print("-"*60)
+    # Logique d'accès simplifiée pour la démo
+    if utilisateur_actuel.role == RoleUtilisateur.ADMIN or \
+       (utilisateur_actuel.role == RoleUtilisateur.CONSULTANT and utilisateur_actuel.organisation == organisation): # Un consultant du cabinet voit la fiche du cabinet
+        print("  Accès Admin/Consultant du cabinet: Total (simulation)")
+    elif utilisateur_actuel.organisation == organisation and utilisateur_actuel.role == RoleUtilisateur.CLIENT : # Un client voit sa propre organisation
+         print("  Accès Client de l'organisation: Vue limitée (simulation)")
+    else:
+        # Cas où un consultant externe voudrait voir la fiche d'un client auquel il n'est pas explicitement lié par un projet
+        # Ou un client essayant de voir une autre organisation.
+        # Pour l'instant, on se base sur l'appartenance directe à l'organisation.
+        print("  Accès restreint ou non défini pour cet utilisateur sur cette organisation (simulation).")
+
+
+    print("="*70 + "\n")
 
 
 def main():
@@ -353,6 +458,228 @@ def main():
     else:
         print(f"Erreur: Projet avec ID '{projet_cible_id}' non trouvé pour afficher la fiche.")
 
+    print("\n" + "#"*70)
+    print("### SIMULATION DE LA FICHE CLIENT (ORGANISATION) ###")
+    print("#"*70)
+
+    # Sélectionner une organisation pour la simulation (ex: client_alpha)
+    toutes_les_organisations_simulees = [cabinet_conseil, client_alpha, client_beta]
+    org_cible_id = client_alpha.id_organisation
+
+    organisation_pour_fiche = get_organisation_by_id(org_cible_id, toutes_les_organisations_simulees)
+
+    if organisation_pour_fiche:
+        # Simuler que c'est l'admin Bob qui regarde la fiche du client Alpha
+        utilisateur_courant_pour_fiche_org = admin_bob
+
+        # Afficher la fiche client initiale
+        print_fiche_client(organisation_pour_fiche, utilisateur_courant_pour_fiche_org)
+
+        # --- Simulation d'actions sur la Fiche Client ---
+        print("\n--- SIMULATION D'ACTIONS SUR LA FICHE CLIENT ---")
+
+        # 1. Modifier les informations de l'organisation
+        nouveau_nom_org = "Entreprise Alpha (MàJ)"
+        print(f"\nAction 1: Modifier nom de l'organisation '{organisation_pour_fiche.nom}' vers '{nouveau_nom_org}'...")
+        time.sleep(0.01)
+        update_organisation_info(organisation_pour_fiche, nom=nouveau_nom_org)
+        print(f"Informations de l'organisation mises à jour.")
+        print_fiche_client(organisation_pour_fiche, utilisateur_courant_pour_fiche_org)
+
+        # 2. Ajouter un nouvel utilisateur à l'organisation
+        nouvel_utilisateur_eva = Utilisateur(
+            id_utilisateur="user_eva",
+            nom="Eva Employée",
+            email="eva@alpha-maj.com",
+            role=RoleUtilisateur.CLIENT,
+            organisation=None # Sera défini par add_utilisateur_a_organisation
+        )
+        print(f"\nAction 2: Ajouter nouvel utilisateur '{nouvel_utilisateur_eva.nom}' à '{organisation_pour_fiche.nom}'...")
+        time.sleep(0.01)
+        add_utilisateur_a_organisation(organisation_pour_fiche, nouvel_utilisateur_eva)
+        print(f"Utilisateur '{nouvel_utilisateur_eva.nom}' ajouté. Organisation de Eva: {nouvel_utilisateur_eva.organisation.nom if nouvel_utilisateur_eva.organisation else 'N/A'}")
+        print_fiche_client(organisation_pour_fiche, utilisateur_courant_pour_fiche_org)
+
+        # 3. Ajouter un nouveau projet à l'organisation (et l'associer à un consultant)
+        id_projet_nouveau_gamma = f"proj_gamma_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        nouveau_projet_gamma = Projet(
+            id_projet=id_projet_nouveau_gamma,
+            titre_projet="Projet Gamma - Alpha (Nouveau)",
+            consultant_referent=consultant_alice # Alice gère aussi ce nouveau projet
+        )
+        # Le statut par défaut est IDEE, l'organisation cliente sera mise par add_projet_a_organisation
+
+        print(f"\nAction 3: Ajouter nouveau projet '{nouveau_projet_gamma.titre_projet}' à '{organisation_pour_fiche.nom}'...")
+        time.sleep(0.01)
+        add_projet_a_organisation(organisation_pour_fiche, nouveau_projet_gamma)
+        # Ne pas oublier d'ajouter aussi ce projet aux projets du consultant référent et au cabinet
+        consultant_alice.projets_associes.append(nouveau_projet_gamma)
+        if organisation_pour_fiche.type_org == TypeOrganisation.CLIENT_FINAL:
+             # Si le cabinet doit aussi lister les projets de ses clients (même s'il n'est pas le porteur)
+             # Cela dépend de la logique métier. Ici, on suppose que le cabinet InnovConseil suit les projets de ses clients.
+             if consultant_alice.organisation == cabinet_conseil and cabinet_conseil != organisation_pour_fiche:
+                 add_projet_a_organisation(cabinet_conseil, nouveau_projet_gamma)
+
+
+        print(f"Projet '{nouveau_projet_gamma.titre_projet}' ajouté. Client du projet: {nouveau_projet_gamma.organisation_cliente.nom if nouveau_projet_gamma.organisation_cliente else 'N/A'}")
+        print_fiche_client(organisation_pour_fiche, utilisateur_courant_pour_fiche_org)
+
+        # 4. (Optionnel) Supprimer un utilisateur (Charlie ClientA)
+        id_user_a_supprimer = client_charlie.id_utilisateur
+        print(f"\nAction 4: Supprimer utilisateur '{client_charlie.nom}' (ID: {id_user_a_supprimer}) de '{organisation_pour_fiche.nom}'...")
+        time.sleep(0.01)
+        if remove_utilisateur_de_organisation(organisation_pour_fiche, id_user_a_supprimer):
+            print(f"Utilisateur '{client_charlie.nom}' supprimé.")
+            # Vérifier si Charlie a été retiré des projets où il était associé (pas géré par la fonction de suppression d'org)
+            # Pour la simulation, on peut le faire manuellement si besoin de propreté
+            for projet_sim in tous_les_projets_simules + [nouveau_projet_gamma]:
+                if client_charlie in projet_sim.consultant_referent.projets_associes: # Ceci est incorrect, charlie n'est pas consultant
+                    pass # La liste projets_associes est sur l'utilisateur, pas sur le consultant_referent du projet
+                # On devrait plutôt vérifier si Charlie est dans une liste "participants_client" du projet, si elle existait.
+                # Pour l'instant, on suppose que son accès est juste via son appartenance à l'organisation.
+                # Si Charlie était un consultant référent (improbable pour un client), il faudrait le gérer.
+        else:
+            print(f"Échec de la suppression de l'utilisateur ID {id_user_a_supprimer}.")
+        print_fiche_client(organisation_pour_fiche, utilisateur_courant_pour_fiche_org)
+
+    else:
+        print(f"Erreur: Organisation avec ID '{org_cible_id}' non trouvée pour afficher la fiche client.")
+
+# --- Fonctions et simulation pour le Module 2 : Recherche d'Aides ---
+
+def print_resultats_recherche(resultats: list[Aide], criteres_recherche: dict, recherche_idx: int):
+    """Affiche les résultats d'une recherche d'aides de manière formatée."""
+    print("\n" + "~"*70)
+    print(f"Résultats de la Recherche d'Aides #{recherche_idx}")
+    print("~"*70)
+
+    print("Critères de recherche appliqués:")
+    for cle, valeur in criteres_recherche.items():
+        if hasattr(valeur, 'value'): # Si c'est un Enum
+            print(f"  - {cle}: {valeur.value}")
+        else:
+            print(f"  - {cle}: {valeur}")
+
+    if not resultats:
+        print("\nAucune aide trouvée pour ces critères.")
+        print("~"*70 + "\n")
+        return
+
+    print(f"\n{len(resultats)} aide(s) trouvée(s):")
+    for aide in resultats:
+        print("-"*40)
+        print(f"  Nom: {aide.nom} (ID: {aide.id_aide})")
+        print(f"  Organisme: {aide.organisme_financeur}")
+        print(f"  Type: {aide.type_aide.value}")
+        print(f"  Description: {aide.description_courte}")
+        if aide.montant_max_aide:
+            print(f"  Montant max: {aide.montant_max_aide:,.0f} €".replace(",", " "))
+        if aide.taux_aide:
+            print(f"  Taux: {aide.taux_aide}")
+        if aide.date_limite_depot:
+            print(f"  Date limite: {aide.date_limite_depot.strftime('%d/%m/%Y')}")
+        if aide.localisations_concernees:
+            print(f"  Localisations: {', '.join([loc.value for loc in aide.localisations_concernees])}")
+        if aide.natures_projet_eligibles:
+            print(f"  Natures projet: {', '.join([nat.value for nat in aide.natures_projet_eligibles])}")
+        if aide.secteurs_eligibles:
+             print(f"  Secteurs: {', '.join([sec.value for sec in aide.secteurs_eligibles])}")
+        if aide.tailles_entreprise_eligibles:
+            print(f"  Tailles entreprise: {', '.join([taille.value for taille in aide.tailles_entreprise_eligibles])}")
+        if aide.porteurs_eligibles:
+            print(f"  Porteurs éligibles: {', '.join([porteur.value for porteur in aide.porteurs_eligibles])}")
+        # ... ajouter d'autres champs si nécessaire pour le résumé
+    print("~"*70 + "\n")
+
 
 if __name__ == "__main__":
     main()
+
+    # --- Simulation pour le Module 2 : Recherche d'Aides ---
+    print("\n" + "#"*70)
+    print("### SIMULATION DE RECHERCHE D'AIDES (MODULE 2) ###")
+    print("#"*70)
+
+    # Liste de critères de recherche à simuler
+    recherches_a_simuler = [
+        {"mot_cle": "innovation"},
+        {"type_aide": TypeAide.SUBVENTION, "localisation": LocalisationEntreprise.FRANCE},
+        {"secteur_activite": SecteurActivite.INDUSTRIE, "nature_projet": NatureProjet.INVESTISSEMENT_MATERIEL},
+        {"taille_entreprise": TailleEntreprise.PME, "nb_etp_entreprise": 50, "ca_entreprise": 5000000},
+        {"budget_projet": 100000, "localisation": LocalisationEntreprise.HAUTS_DE_FRANCE},
+        {"trl_projet": 6}, # Projets avec TRL 6
+        {"mot_cle": "écologie", "type_structure": TypeStructureEntreprise.ASSOCIATION}, # Test mot clé + structure
+        {"localisation": LocalisationEntreprise.ILE_DE_FRANCE, "taille_entreprise": TailleEntreprise.TPE},
+        {"mot_cle": "inexistant"}, # Test sans résultat
+        {"nature_projet": NatureProjet.RECRUTEMENT, "secteur_activite": SecteurActivite.TOUS}
+    ]
+
+    for idx, criteres_test in enumerate(recherches_a_simuler):
+        resultats = rechercher_aides(criteres_test, aides_simulees)
+        print_resultats_recherche(resultats, criteres_test, recherche_idx=idx+1)
+        # Pause légère pour mieux voir les résultats défiler si nombreux
+        if len(resultats) > 2:
+            time.sleep(0.01)
+        elif len(resultats) == 0:
+            time.sleep(0.01)
+
+    # --- Simulation de l'association d'une aide à un projet ---
+    print("\n" + "#"*70)
+    print("### SIMULATION D'ASSOCIATION AIDE À PROJET (MODULE 2) ###")
+    print("#"*70)
+
+    # Choisir un projet pour l'association (ex: projet_cir_alpha)
+    projet_pour_association = get_projet_by_id(projet_cir_alpha.id_projet, tous_les_projets_simules)
+
+    # Choisir une aide à associer (ex: la première aide trouvée par la première recherche "innovation")
+    # Ré-exécuter la première recherche pour obtenir une liste d'aides
+    criteres_pour_association = recherches_a_simuler[0] # {"mot_cle": "innovation"}
+    aides_trouvees_pour_assoc = rechercher_aides(criteres_pour_association, aides_simulees)
+
+    if projet_pour_association and aides_trouvees_pour_assoc:
+        aide_a_associer = aides_trouvees_pour_assoc[0] # Prendre la première aide trouvée
+
+        print(f"\nTentative d'association de l'aide '{aide_a_associer.nom}' (ID: {aide_a_associer.id_aide})")
+        print(f"au projet '{projet_pour_association.titre_projet}' (ID: {projet_pour_association.id_projet}).")
+
+        # Afficher l'état des aides du projet AVANT association
+        print("\nÉtat du projet AVANT association d'aide (section Aides):")
+        # Pour afficher seulement la section des aides, on peut tricher un peu ou améliorer print_fiche_projet
+        # Ici, on va ré-afficher une partie de la fiche projet manuellement pour se concentrer sur les aides.
+        print("--- Section Aides du Projet ---")
+        if projet_pour_association.aides_identifiees:
+            for i, aide_associee in enumerate(projet_pour_association.aides_identifiees):
+                 print(f"  - Aide {i+1}: {aide_associee.nom} (ID: {aide_associee.id_aide})")
+        else:
+            print("  Aucune aide actuellement associée.")
+        print("-----------------------------")
+
+
+        if associer_aide_a_projet(projet_pour_association, aide_a_associer):
+            print(f"\nSuccès de l'association. Nouvelle date de MàJ du projet: {projet_pour_association.date_mise_a_jour.strftime('%Y-%m-%d %H:%M:%S.%f')}")
+
+            # Afficher l'état des aides du projet APRÈS association
+            print("\nÉtat du projet APRÈS association d'aide (section Aides):")
+            print("--- Section Aides du Projet ---")
+            if projet_pour_association.aides_identifiees:
+                for i, aide_associee in enumerate(projet_pour_association.aides_identifiees):
+                    print(f"  - Aide {i+1}: {aide_associee.nom} (ID: {aide_associee.id_aide})")
+            else:
+                print("  Aucune aide actuellement associée.") # Ne devrait pas arriver si succès
+            print("-----------------------------")
+
+            # Tentative d'associer la MÊME aide une seconde fois (devrait être empêché)
+            print("\nTentative d'associer la MÊME aide une seconde fois...")
+            associer_aide_a_projet(projet_pour_association, aide_a_associer)
+
+        else:
+            print("\nÉchec de l'association (peut-être déjà associée ou autre erreur).")
+
+        # Pour une vue complète, on pourrait ré-appeler print_fiche_projet
+        # print("\nAffichage complet de la Fiche Projet mise à jour:")
+        # print_fiche_projet(projet_pour_association, admin_bob) # ou l'utilisateur courant pertinent
+
+    elif not projet_pour_association:
+        print("\nErreur: Projet pour association non trouvé.")
+    elif not aides_trouvees_pour_assoc:
+        print("\nErreur: Aucune aide trouvée avec les critères pour l'association (cela ne devrait pas arriver avec la recherche 'innovation').")
