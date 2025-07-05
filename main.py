@@ -2,8 +2,13 @@ from modeles import (
     Utilisateur, Organisation, Projet, Livrable,
     RoleUtilisateur, TypeOrganisation, StatutPipelineProjet, TypeLivrable, StatutValidationLivrable
 )
-from services import get_projets_par_statut, get_projets_recents, get_livrables_recents
+from services import (
+    get_projets_par_statut, get_projets_recents, get_livrables_recents,
+    update_statut_projet, add_aide_to_projet, create_livrable_pour_projet,
+    update_statut_livrable, get_projet_by_id, get_livrables_par_projet
+)
 from datetime import datetime
+import time # Pour simuler des délais et rendre la génération d'ID unique plus robuste
 
 def print_dashboard(consultant: Utilisateur, projets_par_statut: dict, projets_recents: list[Projet], livrables_recents: list[Livrable]):
     """Affiche les informations du dashboard pour un consultant."""
@@ -60,6 +65,92 @@ def print_dashboard(consultant: Utilisateur, projets_par_statut: dict, projets_r
     else:
         print("   Aucune activité récente sur les livrables.")
     print("="*50 + "\n")
+
+def print_fiche_projet(projet: Projet, utilisateur_actuel: Utilisateur):
+    """Affiche les informations de la fiche projet et les actions possibles."""
+    if not projet:
+        print("Erreur: Impossible d'afficher la fiche d'un projet non défini.")
+        return
+
+    print("\n" + "="*60)
+    print(f"FICHE PROJET: {projet.titre_projet.upper()}")
+    print("="*60)
+
+    # 🟦 INFORMATIONS GÉNÉRALES
+    print("\n🟦 INFORMATIONS GÉNÉRALES")
+    print("-"*50)
+    print(f"Titre: {projet.titre_projet}")
+    print(f"Organisation Cliente: {projet.organisation_cliente.nom if projet.organisation_cliente else 'N/A'} (ID: {projet.organisation_cliente.id_organisation if projet.organisation_cliente else 'N/A'})")
+    print(f"Consultant Référent: {projet.consultant_referent.nom if projet.consultant_referent else 'N/A'} (ID: {projet.consultant_referent.id_utilisateur if projet.consultant_referent else 'N/A'})")
+    print(f"Date de Création: {projet.date_creation.strftime('%Y-%m-%d %H:%M') if projet.date_creation else 'N/A'}")
+    print(f"Dernière Mise à Jour: {projet.date_mise_a_jour.strftime('%Y-%m-%d %H:%M') if projet.date_mise_a_jour else 'N/A'}")
+    print(f"Statut Pipeline: {projet.statut_pipeline.value}")
+
+    # Actions possibles (simulées par des numéros pour l'interaction en console)
+    print("  Actions possibles (Informations Générales):")
+    print(f"    1. Modifier Statut Pipeline (actuel: {projet.statut_pipeline.value})")
+    # Lister les statuts possibles pour la modification
+    for i, statut_enum_membre in enumerate(StatutPipelineProjet):
+        if statut_enum_membre != projet.statut_pipeline:
+             print(f"       1.{i+1} Passer à '{statut_enum_membre.value}'")
+
+
+    # 🟨 SUIVI DES AIDES SÉLECTIONNÉES
+    print("\n🟨 SUIVI DES AIDES SÉLECTIONNÉES")
+    print("-"*50)
+    if projet.aides_identifiees:
+        print("Aides Actuelles:")
+        for i, aide in enumerate(projet.aides_identifiees):
+            print(f"  - Aide {i+1}: {aide.get('nom', 'N/A')} (Lien: {aide.get('lien', 'N/A')}, Remarque: {aide.get('remarque', 'N/A')})")
+    else:
+        print("  Aucune aide sélectionnée pour ce projet.")
+    print("  Actions possibles (Aides):")
+    print("    2. Ajouter une Aide")
+
+    # 🟩 SUIVI DES LIVRABLES
+    print("\n🟩 SUIVI DES LIVRABLES")
+    print("-"*50)
+    livrables_du_projet = get_livrables_par_projet(projet) # Triés par date de génération desc par défaut
+    if livrables_du_projet:
+        print("Livrables du Projet:")
+        # En-tête du tableau
+        header = "| {:<20} | {:<12} | {:<19} | {:<25} | {:<15} |".format(
+            "Type", "Statut", "Date Génération", "Fichier Associé", "Créé par"
+        )
+        print(header)
+        print("-" * len(header))
+        for i, livrable in enumerate(livrables_du_projet):
+            row = "| {:<20} | {:<12} | {:<19} | {:<25} | {:<15} |".format(
+                livrable.type_livrable.value,
+                livrable.statut_validation.value,
+                livrable.date_generation.strftime('%Y-%m-%d %H:%M') if livrable.date_generation else 'N/A',
+                livrable.fichier_associe,
+                livrable.cree_par.nom if livrable.cree_par else 'N/A'
+            )
+            print(row)
+            # Actions pour chaque livrable
+            print(f"  Livrable ID {livrable.id_livrable} - Actions:")
+            for j, statut_val_enum_membre in enumerate(StatutValidationLivrable):
+                 if statut_val_enum_membre != livrable.statut_validation:
+                    print(f"    3.{i+1}.{j+1} Modifier statut vers '{statut_val_enum_membre.value}'")
+
+    else:
+        print("  Aucun livrable pour ce projet.")
+    print("  Actions possibles (Livrables):")
+    print("    4. Ajouter un Livrable (manuel)")
+    # print("    5. Générer un Livrable (IA - non implémenté)") # Pour plus tard
+
+    # 🔐 ACCÈS UTILISATEUR (Note)
+    print("\n🔐 ACCÈS UTILISATEUR (Simulation)")
+    print("-"*50)
+    if utilisateur_actuel.role == RoleUtilisateur.CONSULTANT:
+        print("  Accès Consultant: Total (simulation)")
+    elif utilisateur_actuel.role == RoleUtilisateur.CLIENT and projet in utilisateur_actuel.projets_associes:
+        print("  Accès Client: Limité/Lecture seule (simulation)")
+    else:
+        print("  Accès non défini pour cet utilisateur sur ce projet.")
+
+    print("="*60 + "\n")
 
 
 def main():
@@ -193,6 +284,74 @@ def main():
     # projets_recents_test = get_projets_recents(consultant_test_sans_projet)
     # livrables_recents_test = get_livrables_recents(consultant_test_sans_projet)
     # print_dashboard(consultant_test_sans_projet, projets_statut_test, projets_recents_test, livrables_recents_test)
+
+    print("\n" + "#"*70)
+    print("### SIMULATION DE LA FICHE PROJET ###")
+    print("#"*70)
+
+    # Sélectionner un projet pour la simulation (ex: projet_cir_alpha)
+    # Dans une vraie application, on aurait une liste de tous les projets.
+    # Ici, nous allons le chercher dans les projets du cabinet ou d'un client.
+    # Pour simplifier, nous allons utiliser directement la référence que nous avons.
+    projet_cible_id = projet_cir_alpha.id_projet
+
+    # Créons une liste "globale" simulée de tous les projets pour get_projet_by_id
+    tous_les_projets_simules = [projet_cir_alpha, projet_ademe_beta]
+    # Dans une vraie app, cette liste viendrait d'une base de données ou d'un gestionnaire d'état.
+
+    projet_pour_fiche = get_projet_by_id(projet_cible_id, tous_les_projets_simules)
+
+    if projet_pour_fiche:
+        utilisateur_courant_pour_fiche = consultant_alice # Simuler que c'est Alice qui regarde
+
+        # Afficher la fiche projet initiale
+        print_fiche_projet(projet_pour_fiche, utilisateur_courant_pour_fiche)
+
+        # --- Simulation d'actions ---
+        print("\n--- SIMULATION D'ACTIONS SUR LA FICHE PROJET ---")
+
+        # 1. Modifier le statut du projet
+        print(f"\nAction 1: Modifier statut du projet '{projet_pour_fiche.titre_projet}' de '{projet_pour_fiche.statut_pipeline.value}' vers '{StatutPipelineProjet.DEPOT.value}'...")
+        time.sleep(0.01) # Simule un petit délai et aide à l'unicité des ID/timestamps
+        update_statut_projet(projet_pour_fiche, StatutPipelineProjet.DEPOT)
+        print(f"Statut du projet mis à jour. Nouvelle date de MàJ: {projet_pour_fiche.date_mise_a_jour.strftime('%Y-%m-%d %H:%M:%S.%f')}")
+        print_fiche_projet(projet_pour_fiche, utilisateur_courant_pour_fiche)
+
+        # 2. Ajouter une aide au projet
+        print(f"\nAction 2: Ajouter une aide au projet '{projet_pour_fiche.titre_projet}'...")
+        time.sleep(0.01)
+        add_aide_to_projet(projet_pour_fiche, nom_aide="Aide Régionale Innov+", lien_aide="http://region.innov.com", remarque="Dossier urgent")
+        print("Aide ajoutée.")
+        print_fiche_projet(projet_pour_fiche, utilisateur_courant_pour_fiche)
+
+        # 3. Créer un nouveau livrable pour le projet
+        print(f"\nAction 3: Créer un nouveau livrable (Dossier Technique) pour '{projet_pour_fiche.titre_projet}'...")
+        time.sleep(0.01)
+        nouveau_livrable_tech = create_livrable_pour_projet(
+            projet=projet_pour_fiche,
+            type_livrable=TypeLivrable.CIR, # Supposons un autre type pour varier
+            fichier_associe="/chemin/vers/dossier_technique_alpha.pdf",
+            cree_par=consultant_alice,
+            statut_validation=StatutValidationLivrable.BROUILLON
+        )
+        print(f"Nouveau livrable '{nouveau_livrable_tech.id_livrable}' créé.")
+        print_fiche_projet(projet_pour_fiche, utilisateur_courant_pour_fiche)
+
+        # 4. Modifier le statut d'un livrable existant
+        # Prenons le premier livrable de la liste (qui devrait être le plus récent après tri)
+        livrables_actuels = get_livrables_par_projet(projet_pour_fiche)
+        if livrables_actuels:
+            livrable_a_modifier = livrables_actuels[0] # Le plus récent
+            print(f"\nAction 4: Modifier statut du livrable '{livrable_a_modifier.id_livrable}' ({livrable_a_modifier.type_livrable.value}) vers '{StatutValidationLivrable.VALIDE.value}'...")
+            time.sleep(0.01)
+            update_statut_livrable(livrable_a_modifier, StatutValidationLivrable.VALIDE, projet_pour_fiche)
+            print("Statut du livrable mis à jour.")
+            print_fiche_projet(projet_pour_fiche, utilisateur_courant_pour_fiche)
+        else:
+            print("\nAction 4: Aucun livrable à modifier.")
+
+    else:
+        print(f"Erreur: Projet avec ID '{projet_cible_id}' non trouvé pour afficher la fiche.")
 
 
 if __name__ == "__main__":
