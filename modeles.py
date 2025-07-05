@@ -220,3 +220,128 @@ class Aide:
 
     def __repr__(self):
         return f"<Aide {self.nom} ({self.id_aide})>"
+
+# --- Énumérations et Classes pour le Module 3 : Génération de Livrables ---
+
+class StatutCompletionSection(Enum):
+    EN_ATTENTE = "En attente"
+    EN_COURS = "En cours"
+    A_VALIDER = "À valider"
+    VALIDE = "Validé"
+
+class PorteeDocument(Enum):
+    GLOBALE = "Globale au livrable"
+    PARTIE = "Partie spécifique"
+    SOUS_PARTIE = "Sous-partie spécifique"
+    # SECTION = "Section générique" # Pourrait être utilisé si on a une hiérarchie plus plate
+
+class DocumentSource:
+    _id_counter = 0
+    def __init__(self, nom_fichier: str, contenu_texte: str, annotations_utilisateur: str = "", portee: PorteeDocument = PorteeDocument.GLOBALE, id_section_portee: str = None):
+        DocumentSource._id_counter += 1
+        self.id_doc = f"docsrc_{DocumentSource._id_counter}"
+        self.nom_fichier = nom_fichier
+        self.contenu_texte = contenu_texte # Pourrait être un résumé ou le texte intégral
+        self.annotations_utilisateur = annotations_utilisateur
+        self.portee = portee
+        self.id_section_portee = id_section_portee # ID de la Partie/SousPartie si portee spécifique
+
+    def __repr__(self):
+        return f"<DocumentSource {self.nom_fichier} (ID: {self.id_doc}, Portée: {self.portee.value})>"
+
+class VersionSection:
+    def __init__(self, contenu: str, instructions: str = "", timestamp: datetime = None):
+        self.contenu = contenu
+        self.instructions = instructions # Instructions qui ont mené à cette version
+        self.timestamp = timestamp if timestamp else datetime.now()
+
+    def __repr__(self):
+        return f"<VersionSection à {self.timestamp.strftime('%Y-%m-%d %H:%M')}>"
+
+class SectionLivrable:
+    _id_counter = 0
+    def __init__(self, titre: str, niveau: int, instructions_utilisateur: str = "", statut_completion: StatutCompletionSection = StatutCompletionSection.EN_ATTENTE, annotations_internes: str = "", priorite: int = 0):
+        SectionLivrable._id_counter += 1
+        self.id_section = f"sec_{SectionLivrable._id_counter}"
+        self.titre = titre
+        self.niveau = niveau # 1 pour Partie, 2 pour SousPartie, etc.
+        self.contenu_genere = "" # Texte produit par l'IA pour cette section
+        self.instructions_utilisateur = instructions_utilisateur # Instructions spécifiques pour cette section
+        self.statut_completion = statut_completion
+        self.annotations_internes = annotations_internes
+        self.priorite = priorite # Ex: 0 = normal, 1 = haute
+        self.historique_contenu: list[VersionSection] = [] # Pour stocker les versions du contenu
+        self.documents_specifiques: list[DocumentSource] = [] # Documents sources spécifiques à cette section
+
+    def ajouter_version_contenu(self, instructions_generation: str = ""):
+        """Ajoute le contenu actuel à l'historique."""
+        # L'instruction qui a généré self.contenu_genere actuel
+        self.historique_contenu.append(VersionSection(contenu=self.contenu_genere, instructions=instructions_generation))
+
+    def __repr__(self):
+        return f"<SectionLivrable '{self.titre}' (ID: {self.id_section}, Statut: {self.statut_completion.value})>"
+
+class SousPartie(SectionLivrable):
+    def __init__(self, titre: str, instructions_utilisateur: str = "", statut_completion: StatutCompletionSection = StatutCompletionSection.EN_ATTENTE, annotations_internes: str = "", priorite: int = 0):
+        super().__init__(titre, niveau=2, instructions_utilisateur=instructions_utilisateur, statut_completion=statut_completion, annotations_internes=annotations_internes, priorite=priorite)
+        # Le contenu est géré par self.contenu_genere de la classe mère
+
+    def __repr__(self):
+        return f"<SousPartie '{self.titre}' (ID: {self.id_section}, Statut: {self.statut_completion.value})>"
+
+class Partie(SectionLivrable):
+    def __init__(self, titre: str, instructions_utilisateur: str = "", statut_completion: StatutCompletionSection = StatutCompletionSection.EN_ATTENTE, annotations_internes: str = "", priorite: int = 0):
+        super().__init__(titre, niveau=1, instructions_utilisateur=instructions_utilisateur, statut_completion=statut_completion, annotations_internes=annotations_internes, priorite=priorite)
+        self.sous_parties: list[SousPartie] = []
+        # Le contenu de la partie elle-même (texte introductif/conclusif) est dans self.contenu_genere
+
+    def ajouter_sous_partie(self, sous_partie: SousPartie):
+        if isinstance(sous_partie, SousPartie):
+            self.sous_parties.append(sous_partie)
+        else:
+            raise TypeError("Seules des instances de SousPartie peuvent être ajoutées.")
+
+    def __repr__(self):
+        return f"<Partie '{self.titre}' (ID: {self.id_section}, Sous-parties: {len(self.sous_parties)}, Statut: {self.statut_completion.value})>"
+
+
+class Livrable:
+    _id_counter = 0
+    def __init__(self, titre_projet: str, type_livrable_cible: str, projet_associe: Projet = None):
+        Livrable._id_counter +=1
+        # Ce 'id_livrable' est pour le suivi de cette instance de génération,
+        # il peut être différent de l'ID du Livrable final stocké dans Projet.livrables (qui est un objet modeles.Livrable)
+        self.id_generation_livrable = f"genliv_{Livrable._id_counter}"
+        self.titre_projet = titre_projet
+        self.type_livrable_cible = type_livrable_cible # Ex: "CII", "ADEME Appel X"
+        self.plan_document: list[Partie] = []
+        self.documents_sources_globaux: list[DocumentSource] = []
+        self.version_actuelle = 1 # Version majeure du livrable complet
+        # historique_versions pourrait stocker des snapshots complets du Livrable ou des diffs. Complexe.
+        # Pour l'instant, le versioning est par section via SectionLivrable.historique_contenu
+        self.projet_associe = projet_associe # Lien vers l'objet Projet du Module 1
+
+    def ajouter_partie(self, partie: Partie):
+        if isinstance(partie, Partie):
+            self.plan_document.append(partie)
+        else:
+            raise TypeError("Seules des instances de Partie peuvent être ajoutées au plan.")
+
+    def ajouter_document_source_global(self, document: DocumentSource):
+        if isinstance(document, DocumentSource) and document.portee == PorteeDocument.GLOBALE:
+            self.documents_sources_globaux.append(document)
+        else:
+            # On pourrait aussi changer la portée du document ici si on le souhaite
+            raise ValueError("Le document doit être de portée globale ou être ajouté à une section spécifique.")
+
+    def get_section_by_id(self, id_section_recherchee: str) -> SectionLivrable | None:
+        for partie in self.plan_document:
+            if partie.id_section == id_section_recherchee:
+                return partie
+            for sous_partie in partie.sous_parties:
+                if sous_partie.id_section == id_section_recherchee:
+                    return sous_partie
+        return None
+
+    def __repr__(self):
+        return f"<Livrable en génération '{self.titre_projet}' - {self.type_livrable_cible} (ID Gen: {self.id_generation_livrable})>"

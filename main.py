@@ -10,11 +10,21 @@ from services import (
     get_organisation_by_id, get_utilisateurs_pour_organisation, get_projets_pour_organisation,
     add_utilisateur_a_organisation, remove_utilisateur_de_organisation,
     add_projet_a_organisation, remove_projet_de_organisation, update_organisation_info,
-    rechercher_aides, associer_aide_a_projet # Pour Module 2
+    rechercher_aides, associer_aide_a_projet, # Pour Module 2
+    # Services pour Module 3
+    creer_nouveau_livrable_en_generation, ajouter_document_source_a_livrable,
+    get_section_dans_livrable, update_section_statut, update_section_annotations,
+    update_section_priorite, ajouter_instruction_a_section,
+    generer_contenu_section_ia_mock, reescrire_contenu_section_ia_mock
 )
 from donnees_simulees import aides_simulees # Pour Module 2
+# Modèles du Module 3 nécessaires pour le typage et l'instanciation dans main
+from modeles import (
+    LivrableGen, DocumentSource, PorteeDocument, SectionLivrable, Partie, SousPartie, StatutCompletionSection, VersionSection
+)
 from datetime import datetime
 import time # Pour simuler des délais et rendre la génération d'ID unique plus robuste
+import uuid # Pour générer des ID uniques pour les documents sources si besoin en UI
 
 def print_dashboard(consultant: Utilisateur, projets_par_statut: dict, projets_recents: list[Projet], livrables_recents: list[Livrable]):
     """Affiche les informations du dashboard pour un consultant."""
@@ -423,11 +433,16 @@ def main():
         print_fiche_projet(projet_pour_fiche, utilisateur_courant_pour_fiche)
 
         # 2. Ajouter une aide au projet
-        print(f"\nAction 2: Ajouter une aide au projet '{projet_pour_fiche.titre_projet}'...")
-        time.sleep(0.01)
-        add_aide_to_projet(projet_pour_fiche, nom_aide="Aide Régionale Innov+", lien_aide="http://region.innov.com", remarque="Dossier urgent")
-        print("Aide ajoutée.")
-        print_fiche_projet(projet_pour_fiche, utilisateur_courant_pour_fiche)
+        # Note: add_aide_to_projet ajoute un dict, mais Projet.aides_identifiees est maintenant list[Aide]
+        # Cette action va donc échouer ou corrompre la liste si elle n'est pas adaptée.
+        # Pour la simulation du Module 1, c'était OK. Pour la cohérence avec Module 2, il faudrait
+        # soit créer un objet Aide ici, soit utiliser associer_aide_a_projet avec une Aide existante.
+        # Pour l'instant, je commente cette action pour éviter l'incohérence de type.
+        # print(f"\nAction 2: Ajouter une aide au projet '{projet_pour_fiche.titre_projet}'...")
+        # time.sleep(0.01)
+        # add_aide_to_projet(projet_pour_fiche, nom_aide="Aide Régionale Innov+", lien_aide="http://region.innov.com", remarque="Dossier urgent")
+        # print("Aide ajoutée.")
+        # print_fiche_projet(projet_pour_fiche, utilisateur_courant_pour_fiche)
 
         # 3. Créer un nouveau livrable pour le projet
         print(f"\nAction 3: Créer un nouveau livrable (Dossier Technique) pour '{projet_pour_fiche.titre_projet}'...")
@@ -525,21 +540,18 @@ def main():
         print_fiche_client(organisation_pour_fiche, utilisateur_courant_pour_fiche_org)
 
         # 4. (Optionnel) Supprimer un utilisateur (Charlie ClientA)
-        id_user_a_supprimer = client_charlie.id_utilisateur
-        print(f"\nAction 4: Supprimer utilisateur '{client_charlie.nom}' (ID: {id_user_a_supprimer}) de '{organisation_pour_fiche.nom}'...")
-        time.sleep(0.01)
-        if remove_utilisateur_de_organisation(organisation_pour_fiche, id_user_a_supprimer):
-            print(f"Utilisateur '{client_charlie.nom}' supprimé.")
-            # Vérifier si Charlie a été retiré des projets où il était associé (pas géré par la fonction de suppression d'org)
-            # Pour la simulation, on peut le faire manuellement si besoin de propreté
-            for projet_sim in tous_les_projets_simules + [nouveau_projet_gamma]:
-                if client_charlie in projet_sim.consultant_referent.projets_associes: # Ceci est incorrect, charlie n'est pas consultant
-                    pass # La liste projets_associes est sur l'utilisateur, pas sur le consultant_referent du projet
-                # On devrait plutôt vérifier si Charlie est dans une liste "participants_client" du projet, si elle existait.
-                # Pour l'instant, on suppose que son accès est juste via son appartenance à l'organisation.
-                # Si Charlie était un consultant référent (improbable pour un client), il faudrait le gérer.
+        # Pour que cette simulation soit propre, il faudrait s'assurer que Charlie est bien dans l'organisation avant de le supprimer.
+        # client_charlie a été ajouté à client_alpha, donc organisation_pour_fiche (qui est client_alpha) devrait le contenir.
+        if any(u.id_utilisateur == client_charlie.id_utilisateur for u in organisation_pour_fiche.utilisateurs):
+            id_user_a_supprimer = client_charlie.id_utilisateur
+            print(f"\nAction 4: Supprimer utilisateur '{client_charlie.nom}' (ID: {id_user_a_supprimer}) de '{organisation_pour_fiche.nom}'...")
+            time.sleep(0.01)
+            if remove_utilisateur_de_organisation(organisation_pour_fiche, id_user_a_supprimer):
+                print(f"Utilisateur '{client_charlie.nom}' supprimé.")
+            else:
+                print(f"Échec de la suppression de l'utilisateur ID {id_user_a_supprimer}.")
         else:
-            print(f"Échec de la suppression de l'utilisateur ID {id_user_a_supprimer}.")
+            print(f"\nAction 4: Utilisateur '{client_charlie.nom}' non trouvé dans '{organisation_pour_fiche.nom}' avant tentative de suppression.")
         print_fiche_client(organisation_pour_fiche, utilisateur_courant_pour_fiche_org)
 
     else:
@@ -593,6 +605,7 @@ def print_resultats_recherche(resultats: list[Aide], criteres_recherche: dict, r
 
 
 if __name__ == "__main__":
+    # Exécution de la simulation principale du Module 1 (Dashboard, Fiche Projet, Fiche Client)
     main()
 
     # --- Simulation pour le Module 2 : Recherche d'Aides ---
@@ -614,6 +627,14 @@ if __name__ == "__main__":
         {"nature_projet": NatureProjet.RECRUTEMENT, "secteur_activite": SecteurActivite.TOUS}
     ]
 
+    # Recréer les objets globaux ici si main() les modifie trop et qu'on a besoin d'un état frais.
+    # Pour l'instant, on utilise l'état tel que laissé par main().
+    # Note: projet_cir_alpha et consultant_alice sont définis dans le scope global de main()
+    # et donc accessibles ici si main() est appelée avant cette section.
+
+    _tous_les_projets_simules = [projet_cir_alpha, projet_ademe_beta, nouveau_projet_gamma] if 'nouveau_projet_gamma' in globals() else [projet_cir_alpha, projet_ademe_beta]
+
+
     for idx, criteres_test in enumerate(recherches_a_simuler):
         resultats = rechercher_aides(criteres_test, aides_simulees)
         print_resultats_recherche(resultats, criteres_test, recherche_idx=idx+1)
@@ -629,7 +650,7 @@ if __name__ == "__main__":
     print("#"*70)
 
     # Choisir un projet pour l'association (ex: projet_cir_alpha)
-    projet_pour_association = get_projet_by_id(projet_cir_alpha.id_projet, tous_les_projets_simules)
+    projet_pour_association = get_projet_by_id(projet_cir_alpha.id_projet, _tous_les_projets_simules)
 
     # Choisir une aide à associer (ex: la première aide trouvée par la première recherche "innovation")
     # Ré-exécuter la première recherche pour obtenir une liste d'aides
@@ -644,12 +665,10 @@ if __name__ == "__main__":
 
         # Afficher l'état des aides du projet AVANT association
         print("\nÉtat du projet AVANT association d'aide (section Aides):")
-        # Pour afficher seulement la section des aides, on peut tricher un peu ou améliorer print_fiche_projet
-        # Ici, on va ré-afficher une partie de la fiche projet manuellement pour se concentrer sur les aides.
         print("--- Section Aides du Projet ---")
         if projet_pour_association.aides_identifiees:
-            for i, aide_associee in enumerate(projet_pour_association.aides_identifiees):
-                 print(f"  - Aide {i+1}: {aide_associee.nom} (ID: {aide_associee.id_aide})")
+            for i, aide_associee_obj in enumerate(projet_pour_association.aides_identifiees):
+                 print(f"  - Aide {i+1}: {aide_associee_obj.nom} (ID: {aide_associee_obj.id_aide})")
         else:
             print("  Aucune aide actuellement associée.")
         print("-----------------------------")
@@ -662,8 +681,8 @@ if __name__ == "__main__":
             print("\nÉtat du projet APRÈS association d'aide (section Aides):")
             print("--- Section Aides du Projet ---")
             if projet_pour_association.aides_identifiees:
-                for i, aide_associee in enumerate(projet_pour_association.aides_identifiees):
-                    print(f"  - Aide {i+1}: {aide_associee.nom} (ID: {aide_associee.id_aide})")
+                for i, aide_associee_obj in enumerate(projet_pour_association.aides_identifiees):
+                    print(f"  - Aide {i+1}: {aide_associee_obj.nom} (ID: {aide_associee_obj.id_aide})")
             else:
                 print("  Aucune aide actuellement associée.") # Ne devrait pas arriver si succès
             print("-----------------------------")
@@ -683,3 +702,318 @@ if __name__ == "__main__":
         print("\nErreur: Projet pour association non trouvé.")
     elif not aides_trouvees_pour_assoc:
         print("\nErreur: Aucune aide trouvée avec les critères pour l'association (cela ne devrait pas arriver avec la recherche 'innovation').")
+
+# --- Fonctions et simulation pour le Module 3 : Génération de Livrables ---
+
+def afficher_details_section(section: SectionLivrable | None, livrable_gen: LivrableGen):
+    if not section:
+        print("Aucune section sélectionnée ou section non trouvée.")
+        return
+
+    print("\n" + "-"*60)
+    print(f"DÉTAILS DE LA SECTION : {section.titre.upper()} (ID: {section.id_section})")
+    print("-"*60)
+    print(f"Niveau: {section.niveau}")
+    print(f"Statut: {section.statut_completion.value}")
+    print(f"Priorité: {section.priorite}")
+    print(f"Instructions Utilisateur Actuelles: \n'''\n{section.instructions_utilisateur or 'Aucune'} \n'''")
+    print("\nCONTENU GÉNÉRÉ ACTUEL:")
+    print("'''")
+    print(section.contenu_genere if section.contenu_genere.strip() else "Aucun contenu généré pour l'instant.")
+    print("'''")
+
+    print("\nDocuments Sources Spécifiques à cette section:")
+    if section.documents_specifiques:
+        for i, doc_src in enumerate(section.documents_specifiques):
+            print(f"  {i+1}. {doc_src.nom_fichier} (ID: {doc_src.id_doc}) - Annotations: {doc_src.annotations_utilisateur or 'Aucune'}")
+    else:
+        print("  Aucun document source spécifique.")
+
+    print("\nHistorique du Contenu (Versions précédentes):")
+    if section.historique_contenu:
+        # Afficher de la plus récente (avant dernière modif) à la plus ancienne
+        for i, version in enumerate(reversed(section.historique_contenu)):
+            print(f"  Version {len(section.historique_contenu) - i} (du {version.timestamp.strftime('%Y-%m-%d %H:%M:%S')})")
+            print(f"    Instructions ayant mené à cette version: {version.instructions or 'N/A'}")
+            # On pourrait afficher un diff ou un extrait du contenu ici si c'était une vraie UI
+            # print(f"    Contenu: \n'''\n{version.contenu[:100]}...\n'''" if version.contenu else "    Contenu vide.")
+            if i < 2 : # Limiter l'affichage pour ne pas surcharger la console
+                 print(f"    Contenu (extrait): \n'''\n{version.contenu[:150] + '...' if len(version.contenu) > 150 else version.contenu}\n'''")
+            elif i == 2:
+                 print("    ...")
+
+    else:
+        print("  Aucun historique de contenu pour cette section (contenu initial ou pas encore généré).")
+    print("-"*60)
+
+def afficher_structure_livrable_gen(livrable_gen: LivrableGen, section_selectionnee_id: str = None):
+    if not livrable_gen:
+        print("Erreur: Livrable en génération non défini.")
+        return
+
+    print("\n" + "="*70)
+    print(f"LIVRABLE EN GÉNÉRATION: {livrable_gen.titre_projet.upper()} (Type: {livrable_gen.type_livrable_cible})")
+    print(f"ID Génération: {livrable_gen.id_generation_livrable}, Version: {livrable_gen.version_actuelle}")
+    if livrable_gen.projet_associe:
+        print(f"Associé au Projet ID: {livrable_gen.projet_associe.id_projet}")
+    print("="*70)
+
+    print("\n📄 Documents Sources Globaux:")
+    if livrable_gen.documents_sources_globaux:
+        for i, doc_src in enumerate(livrable_gen.documents_sources_globaux):
+            print(f"  {i+1}. {doc_src.nom_fichier} (ID: {doc_src.id_doc}) - Annotations: {doc_src.annotations_utilisateur or 'Aucune'}")
+    else:
+        print("  Aucun document source global.")
+
+    print("\n🏗️ Plan du Document:")
+    if not livrable_gen.plan_document:
+        print("  Aucun plan défini pour ce livrable.")
+    else:
+        for partie in livrable_gen.plan_document:
+            selection_marker_partie = " <===" if section_selectionnee_id == partie.id_section else ""
+            print(f"  [P] {partie.titre} (ID: {partie.id_section}, Statut: {partie.statut_completion.value}, Prio: {partie.priorite}, Docs: {len(partie.documents_specifiques)}){selection_marker_partie}") # Correction prio vs priorite
+            for sous_partie in partie.sous_parties:
+                selection_marker_sous_partie = " <===" if section_selectionnee_id == sous_partie.id_section else ""
+                print(f"      [SP] {sous_partie.titre} (ID: {sous_partie.id_section}, Statut: {sous_partie.statut_completion.value}, Prio: {sous_partie.priorite}, Docs: {len(sous_partie.documents_specifiques)}){selection_marker_sous_partie}")
+    print("="*70)
+
+def maquette_console_module3(livrable_gen: LivrableGen, utilisateur_actuel: Utilisateur):
+    """Boucle principale pour l'interaction avec le Module 3 en console."""
+    section_selectionnee_id = None
+
+    # Récupérer tous les documents sources pour les passer aux fonctions IA mock
+    def get_documents_pertinents_pour_section(sec_id: str) -> list[DocumentSource]:
+        docs_pertinents = list(livrable_gen.documents_sources_globaux) # Copie
+        section_cible = get_section_dans_livrable(livrable_gen, sec_id)
+        if section_cible:
+            # Ajouter les documents spécifiques à la section elle-même
+            for doc_s in section_cible.documents_specifiques:
+                if doc_s not in docs_pertinents: # Eviter doublons si un doc est global ET spécifique
+                    docs_pertinents.append(doc_s)
+
+            # Si c'est une SousPartie, ajouter aussi les documents spécifiques de la Partie parente
+            if isinstance(section_cible, SousPartie):
+                for p in livrable_gen.plan_document:
+                    if section_cible in p.sous_parties:
+                        for doc_p in p.documents_specifiques:
+                            if doc_p not in docs_pertinents:
+                                docs_pertinents.append(doc_p)
+                        break
+        return docs_pertinents
+
+
+    while True:
+        afficher_structure_livrable_gen(livrable_gen, section_selectionnee_id)
+
+        section_actuelle = None
+        if section_selectionnee_id:
+            section_actuelle = get_section_dans_livrable(livrable_gen, section_selectionnee_id)
+            afficher_details_section(section_actuelle, livrable_gen)
+
+        print("\nCOMMANDES DISPONIBLES:")
+        print("  sel <ID_section>        : Sélectionner une partie ou sous-partie")
+        print("  gen                     : Générer contenu pour la section sélectionnée (demande instructions)")
+        print("  reescrire               : Réécrire contenu pour la section sélectionnée (demande instructions)")
+        print("  instr <texte>           : Ajouter/modifier instructions pour la section sélectionnée")
+        print("  statut <en_attente|en_cours|a_valider|valide> : Modifier statut section")
+        print("  add_doc_global <nom_fich> <contenu> [\"annotations avec espaces\"] : Ajouter doc source global")
+        print("  add_doc_section <nom_fich> <contenu> [\"annotations avec espaces\"] : Ajouter doc à section")
+        print("  voir_historique         : Voir l'historique complet de la section (si beaucoup de versions)")
+        print("  quitter                 : Quitter la maquette du Module 3")
+
+        choix_input = input("Votre commande: ").strip()
+        choix_parts = choix_input.split(" ", 1)
+        commande = choix_parts[0].lower()
+        args_str = choix_parts[1] if len(choix_parts) > 1 else ""
+
+
+        if commande == "quitter":
+            break
+        elif commande == "sel":
+            if args_str:
+                sec = get_section_dans_livrable(livrable_gen, args_str)
+                if sec:
+                    section_selectionnee_id = args_str
+                    print(f"Section '{sec.titre}' sélectionnée.")
+                else:
+                    print(f"Erreur: Section ID '{args_str}' non trouvée.")
+            else:
+                print("Erreur: Veuillez spécifier un ID de section.")
+
+        elif commande == "add_doc_global":
+            try:
+                parts = args_str.split(" ", 2)
+                nom_f = parts[0]
+                contenu = parts[1]
+                annotation_text = parts[2].strip('"') if len(parts) > 2 else ""
+                doc = DocumentSource(nom_fichier=nom_f, contenu_texte=contenu, annotations_utilisateur=annotation_text, portee=PorteeDocument.GLOBALE)
+                ajouter_document_source_a_livrable(livrable_gen, doc)
+            except IndexError:
+                print("Usage: add_doc_global <nom_fichier> <contenu_court_simulé> [\"annotations_optionnelles\"]")
+
+
+        elif section_actuelle: # Commandes qui nécessitent une section sélectionnée
+            if commande == "gen":
+                instr = input("Instructions pour la génération (laisser vide si aucune): ").strip()
+                docs_pert = get_documents_pertinents_pour_section(section_selectionnee_id)
+                generer_contenu_section_ia_mock(section_actuelle, docs_pert, instr)
+            elif commande == "reescrire":
+                if not section_actuelle.contenu_genere:
+                    print("Aucun contenu à réécrire. Veuillez d'abord générer du contenu avec 'gen'.")
+                    continue
+                instr = input("Instructions pour la réécriture (obligatoire): ").strip()
+                if not instr:
+                    print("Les instructions sont obligatoires pour la réécriture.")
+                    continue
+                docs_pert = get_documents_pertinents_pour_section(section_selectionnee_id)
+                reescrire_contenu_section_ia_mock(section_actuelle, docs_pert, instr)
+            elif commande == "instr":
+                ajouter_instruction_a_section(section_actuelle, args_str)
+            elif commande == "statut":
+                try:
+                    nouveau_statut_enum = StatutCompletionSection[args_str.upper()]
+                    update_section_statut(section_actuelle, nouveau_statut_enum)
+                except KeyError:
+                    print(f"Erreur: Statut '{args_str}' invalide. Options: en_attente, en_cours, a_valider, valide.")
+            elif commande == "add_doc_section":
+                try:
+                    parts = args_str.split(" ", 2)
+                    nom_f = parts[0]
+                    contenu = parts[1]
+                    annotation_text = parts[2].strip('"') if len(parts) > 2 else ""
+                    portee_doc = PorteeDocument.PARTIE if isinstance(section_actuelle, Partie) else PorteeDocument.SOUS_PARTIE
+                    doc = DocumentSource(nom_fichier=nom_f, contenu_texte=contenu, annotations_utilisateur=annotation_text, portee=portee_doc, id_section_portee=section_selectionnee_id)
+                    ajouter_document_source_a_livrable(livrable_gen, doc)
+                except IndexError:
+                    print("Usage: add_doc_section <nom_fichier> <contenu_court_simulé> [\"annotations_optionnelles\"]")
+            elif commande == "voir_historique":
+                if section_actuelle.historique_contenu:
+                    print(f"\n--- Historique complet pour '{section_actuelle.titre}' ---")
+                    for i, version in enumerate(reversed(section_actuelle.historique_contenu)):
+                        print(f"  Version {len(section_actuelle.historique_contenu) - i} (du {version.timestamp.strftime('%Y-%m-%d %H:%M:%S')})")
+                        print(f"    Instructions: {version.instructions or 'N/A'}")
+                        print(f"    Contenu: \n'''\n{version.contenu}\n'''")
+                        print("  ----")
+                else:
+                    print("Aucun historique pour cette section.")
+
+            else:
+                print(f"Commande '{commande}' non reconnue ou nécessite une section non sélectionnée.")
+        else:
+            if commande in ["gen", "reescrire", "instr", "statut", "add_doc_section", "voir_historique"]:
+                print(f"Erreur: La commande '{commande}' nécessite qu'une section soit sélectionnée. Utilisez 'sel <ID_section>'.")
+            else:
+                 print(f"Commande '{commande}' non reconnue.")
+
+        input("\nAppuyez sur Entrée pour continuer...") # Pause pour lire la sortie
+
+# --- FIN Fonctions et simulation pour le Module 3 ---
+
+
+if __name__ == "__main__":
+    # Exécution de la simulation principale du Module 1 (Dashboard, Fiche Projet, Fiche Client)
+    # On garde les variables globales définies dans main() pour pouvoir les réutiliser
+    # (consultant_alice, projet_cir_alpha, etc.)
+    main_instance_vars = main() # Exécute main et récupère les variables si main les retourne
+                                # Ou alors, il faut s'assurer que les variables nécessaires sont globales
+                                # ou passées en argument. Pour l'instant, on suppose qu'elles sont accessibles
+                                # car elles sont définies dans le scope global de main() lors de son exécution.
+
+    # --- Simulation pour le Module 2 : Recherche d'Aides ---
+    # (Code du Module 2 reste ici)
+    print("\n" + "#"*70)
+    print("### SIMULATION DE RECHERCHE D'AIDES (MODULE 2) ###")
+    print("#"*70)
+    recherches_a_simuler = [
+        {"mot_cle": "innovation"}, {"type_aide": TypeAide.SUBVENTION, "localisation": LocalisationEntreprise.FRANCE},
+        {"secteur_activite": SecteurActivite.INDUSTRIE, "nature_projet": NatureProjet.INVESTISSEMENT_MATERIEL},
+        {"taille_entreprise": TailleEntreprise.PME, "nb_etp_entreprise": 50, "ca_entreprise": 5000000},
+        {"budget_projet": 100000, "localisation": LocalisationEntreprise.HAUTS_DE_FRANCE}, {"trl_projet": 6},
+        {"mot_cle": "écologie", "type_structure": TypeStructureEntreprise.ASSOCIATION},
+        {"localisation": LocalisationEntreprise.ILE_DE_FRANCE, "taille_entreprise": TailleEntreprise.TPE},
+        {"mot_cle": "inexistant"}, {"nature_projet": NatureProjet.RECRUTEMENT, "secteur_activite": SecteurActivite.TOUS}
+    ]
+    # Assurer que les projets sont accessibles pour get_projet_by_id
+    _tous_les_projets_simules_m2 = [projet_cir_alpha, projet_ademe_beta]
+    if 'nouveau_projet_gamma' in globals(): # Si le projet gamma a été créé dans la simulation de la fiche client
+        _tous_les_projets_simules_m2.append(nouveau_projet_gamma)
+
+    for idx, criteres_test in enumerate(recherches_a_simuler):
+        resultats = rechercher_aides(criteres_test, aides_simulees)
+        print_resultats_recherche(resultats, criteres_test, recherche_idx=idx+1)
+        if len(resultats) > 2 or len(resultats) == 0: time.sleep(0.01)
+
+    print("\n" + "#"*70)
+    print("### SIMULATION D'ASSOCIATION AIDE À PROJET (MODULE 2) ###")
+    print("#"*70)
+    projet_pour_association_m2 = get_projet_by_id(projet_cir_alpha.id_projet, _tous_les_projets_simules_m2)
+    criteres_pour_association_m2 = recherches_a_simuler[0]
+    aides_trouvees_pour_assoc_m2 = rechercher_aides(criteres_pour_association_m2, aides_simulees)
+    if projet_pour_association_m2 and aides_trouvees_pour_assoc_m2:
+        aide_a_associer_m2 = aides_trouvees_pour_assoc_m2[0]
+        print(f"\nTentative d'association de l'aide '{aide_a_associer_m2.nom}' au projet '{projet_pour_association_m2.titre_projet}'.")
+        if associer_aide_a_projet(projet_pour_association_m2, aide_a_associer_m2):
+            print(f"Succès. MàJ projet: {projet_pour_association_m2.date_mise_a_jour.strftime('%Y-%m-%d %H:%M:%S.%f')}")
+            associer_aide_a_projet(projet_pour_association_m2, aide_a_associer_m2) # Test doublon
+    # (Fin de la simulation Module 2 abrégée pour la lisibilité du diff)
+
+
+    # --- Simulation pour le Module 3 : Génération de Livrables ---
+    print("\n" + "#"*70)
+    print("### SIMULATION DE GÉNÉRATION DE LIVRABLE (MODULE 3) ###")
+    print("#"*70)
+
+    # S'assurer que projet_cir_alpha et consultant_alice sont disponibles.
+    # Ils sont définis dans la fonction main() qui est appelée au-dessus.
+    # Pour y accéder directement, il faudrait qu'ils soient retournés par main() ou déclarés globalement.
+    # Pour cette simulation, nous allons les recréer ou supposer qu'ils sont accessibles
+    # via une structure de données globale si main() les y a placés.
+    # Pour simplifier, on va juste utiliser les noms, en espérant qu'ils soient dans le scope.
+    # Idéalement, main() retournerait les objets nécessaires ou on les recréerait ici.
+
+    # Pour que cela fonctionne de manière autonome, on recrée rapidement les objets nécessaires ici
+    # si main() ne les rend pas accessibles globalement.
+    # Pour l'instant, on va supposer que `projet_cir_alpha` et `consultant_alice` sont accessibles
+    # car ils sont définis dans le même scope if __name__ == "__main__" après l'appel à main().
+    # Cela dépend de la portée des variables dans `main()`. Si `main()` les définit localement,
+    # il faudra les recréer ou les passer.
+
+    # Création du livrable en génération
+    # Assumons que projet_cir_alpha et consultant_alice sont accessibles depuis l'appel à main() plus haut.
+    # Si ce n'est pas le cas, il faudrait les recréer ou les récupérer.
+    # Par exemple, si main() retournait un dictionnaire de ces objets :
+    # objets_main = main()
+    # projet_pour_m3 = objets_main['projet_cir_alpha']
+    # utilisateur_pour_m3 = objets_main['consultant_alice']
+    # Pour l'instant, on utilise directement les noms, ce qui fonctionnera si main() ne les encapsule pas.
+
+    livrable_cii_en_gen = creer_nouveau_livrable_en_generation(
+        titre_projet=projet_cir_alpha.titre_projet, # Utilise le projet_cir_alpha de la simulation main()
+        type_livrable_cible="CII",
+        projet_associe=projet_cir_alpha
+    )
+
+    print(f"Livrable en génération créé: {livrable_cii_en_gen.id_generation_livrable} pour le projet '{livrable_cii_en_gen.titre_projet}'")
+
+    # Ajout de documents sources
+    doc1_global = DocumentSource(
+        nom_fichier="CR_reunion_lancement.txt",
+        contenu_texte="Compte rendu de la réunion de lancement du projet XYZ. Objectifs: A, B, C. Participants: ...",
+        annotations_utilisateur="Infos clés sur les objectifs et le contexte."
+    )
+    ajouter_document_source_a_livrable(livrable_cii_en_gen, doc1_global)
+
+    doc2_tech = DocumentSource(
+        nom_fichier="spec_technique_v1.pdf",
+        contenu_texte="Spécifications techniques détaillées du composant innovant. Diagrammes et mesures...",
+        annotations_utilisateur="Très important pour la partie description des travaux R&D."
+        # On pourrait l'affecter à une section plus tard via la maquette console.
+    )
+    ajouter_document_source_a_livrable(livrable_cii_en_gen, doc2_tech)
+
+    # Lancer la maquette console interactive pour le Module 3
+    # On utilise consultant_alice comme utilisateur actuel pour la simulation
+    maquette_console_module3(livrable_cii_en_gen, consultant_alice)
+
+    print("\nFin de la simulation du Module 3.")
+    print("Fin du script principal.")

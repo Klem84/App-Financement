@@ -405,3 +405,193 @@ def associer_aide_a_projet(projet: Projet, aide: Aide) -> bool:
     projet.date_mise_a_jour = datetime.now()
     print(f"Succès: Aide '{aide.nom}' associée au projet '{projet.titre_projet}'.")
     return True
+
+# --- Fonctions pour le Module 3 : Génération de Livrables ---
+
+# Import des nouveaux modèles et Enums du Module 3
+from modeles import (
+    Livrable as LivrableGen, # Alias pour distinguer du Livrable du Module 1
+    DocumentSource, PorteeDocument,
+    SectionLivrable, Partie, SousPartie, StatutCompletionSection,
+    Projet # Projet du Module 1 pour l'association
+)
+
+def creer_nouveau_livrable_en_generation(
+    titre_projet: str,
+    type_livrable_cible: str,
+    projet_associe: Projet = None
+) -> LivrableGen:
+    """Crée une nouvelle instance de Livrable (pour la génération)."""
+    livrable_gen = LivrableGen(
+        titre_projet=titre_projet,
+        type_livrable_cible=type_livrable_cible,
+        projet_associe=projet_associe
+    )
+    # Si c'est un type connu comme CII, on peut pré-remplir le plan
+    if type_livrable_cible.upper() == "CII":
+        definir_plan_livrable_type_cii(livrable_gen)
+    # Ajouter d'autres types de plans prédéfinis ici (ADEME, etc.)
+    return livrable_gen
+
+def definir_plan_livrable_type_cii(livrable_gen: LivrableGen):
+    """Définit la structure standard (plan) pour un dossier CII."""
+    # Exemple de plan CII simplifié
+    partie1 = Partie(titre="1. Présentation de l'entreprise et du projet")
+    partie1.ajouter_sous_partie(SousPartie(titre="1.1 Identification de l'entreprise"))
+    partie1.ajouter_sous_partie(SousPartie(titre="1.2 Contexte et objectifs du projet d'innovation"))
+    livrable_gen.ajouter_partie(partie1)
+
+    partie2 = Partie(titre="2. État de l'art et levée des verrous technologiques")
+    partie2.ajouter_sous_partie(SousPartie(titre="2.1 Recherche de l'état de l'art existant"))
+    partie2.ajouter_sous_partie(SousPartie(titre="2.2 Identification des incertitudes et verrous technologiques"))
+    livrable_gen.ajouter_partie(partie2)
+
+    partie3 = Partie(titre="3. Description des travaux de R&D ou d'Innovation")
+    partie3.ajouter_sous_partie(SousPartie(titre="3.1 Approche méthodologique et démarche expérimentale"))
+    partie3.ajouter_sous_partie(SousPartie(titre="3.2 Description détaillée des travaux réalisés (par phase/lot)"))
+    partie3.ajouter_sous_partie(SousPartie(titre="3.3 Moyens humains et matériels mobilisés"))
+    livrable_gen.ajouter_partie(partie3)
+
+    partie4 = Partie(titre="4. Niveau d'originalité et caractère innovant des travaux")
+    partie4.ajouter_sous_partie(SousPartie(titre="4.1 Apport technologique et performances obtenues"))
+    partie4.ajouter_sous_partie(SousPartie(titre="4.2 Caractère innovant par rapport à l'état de l'art"))
+    livrable_gen.ajouter_partie(partie4)
+
+    # Initialiser le contenu de chaque section pour l'historique
+    for p in livrable_gen.plan_document:
+        p.ajouter_version_contenu("Initialisation du plan.")
+        for sp in p.sous_parties:
+            sp.ajouter_version_contenu("Initialisation du plan.")
+
+    print(f"Plan standard pour '{livrable_gen.type_livrable_cible}' appliqué au livrable '{livrable_gen.titre_projet}'.")
+
+
+def ajouter_document_source_a_livrable(livrable_gen: LivrableGen, document: DocumentSource) -> bool:
+    """Ajoute un DocumentSource globalement ou à une section spécifique du livrable en génération."""
+    if not livrable_gen or not document:
+        return False
+
+    if document.portee == PorteeDocument.GLOBALE:
+        if document not in livrable_gen.documents_sources_globaux:
+            livrable_gen.documents_sources_globaux.append(document)
+            print(f"Document '{document.nom_fichier}' ajouté globalement au livrable.")
+            return True
+    elif document.id_section_portee:
+        section = livrable_gen.get_section_by_id(document.id_section_portee)
+        if section:
+            if document not in section.documents_specifiques:
+                section.documents_specifiques.append(document)
+                # Mettre à jour la portée du document si elle ne correspond pas à la section
+                if isinstance(section, Partie) and document.portee != PorteeDocument.PARTIE:
+                    document.portee = PorteeDocument.PARTIE # ou lever une erreur si la portée doit être stricte
+                elif isinstance(section, SousPartie) and document.portee != PorteeDocument.SOUS_PARTIE:
+                    document.portee = PorteeDocument.SOUS_PARTIE
+                print(f"Document '{document.nom_fichier}' ajouté spécifiquement à la section '{section.titre}'.")
+                return True
+        else:
+            print(f"Erreur: Section ID '{document.id_section_portee}' non trouvée pour le document '{document.nom_fichier}'.")
+            return False
+    else:
+        print(f"Erreur: Portée du document '{document.nom_fichier}' non globale mais pas d'ID de section spécifié.")
+        return False
+    return False # Si déjà ajouté ou autre cas non géré
+
+def get_section_dans_livrable(livrable_gen: LivrableGen, id_section: str) -> SectionLivrable | None:
+    """Récupère une section (Partie ou SousPartie) par son ID dans un livrable en génération."""
+    return livrable_gen.get_section_by_id(id_section)
+
+def update_section_statut(section: SectionLivrable, nouveau_statut: StatutCompletionSection) -> bool:
+    """Met à jour le statut de complétion d'une section."""
+    if not section: return False
+    section.statut_completion = nouveau_statut
+    print(f"Statut de la section '{section.titre}' mis à jour à '{nouveau_statut.value}'.")
+    return True
+
+def update_section_annotations(section: SectionLivrable, annotations: str) -> bool:
+    """Met à jour les annotations internes d'une section."""
+    if not section: return False
+    section.annotations_internes = annotations
+    print(f"Annotations de la section '{section.titre}' mises à jour.")
+    return True
+
+def update_section_priorite(section: SectionLivrable, priorite: int) -> bool:
+    """Met à jour la priorité d'une section."""
+    if not section: return False
+    section.priorite = priorite
+    print(f"Priorité de la section '{section.titre}' mise à jour à {priorite}.")
+    return True
+
+def ajouter_instruction_a_section(section: SectionLivrable, instruction: str) -> bool:
+    """Ajoute/Met à jour les instructions utilisateur pour une section."""
+    if not section: return False
+    section.instructions_utilisateur = instruction
+    print(f"Instructions pour la section '{section.titre}' mises à jour.")
+    return True
+
+# --- Fonctions de simulation IA (mock) ---
+_mock_ia_responses_generation = [
+    "Selon les informations fournies, la société X a développé une technologie Y.",
+    "L'état de l'art actuel montre une lacune dans le domaine Z, que ce projet vise à combler.",
+    "Les travaux de R&D se sont concentrés sur l'optimisation du paramètre A et la validation du prototype B.",
+    "Le caractère innovant réside dans l'approche C qui permet une amélioration de D% par rapport aux solutions existantes."
+]
+_mock_ia_responses_reescriture = [
+    "En reformulant, la société X se distingue par sa technologie Y avant-gardiste.",
+    "Une analyse approfondie de l'état de l'art révèle un besoin non satisfait en Z, auquel le projet répond.",
+    "La démarche expérimentale a inclus l'optimisation rigoureuse de A et des tests exhaustifs du prototype B.",
+    "L'originalité de la solution C se manifeste par un gain de performance de D%, surpassant les alternatives."
+]
+_idx_gen = 0
+_idx_ree = 0
+
+def generer_contenu_section_ia_mock(section: SectionLivrable, documents_pertinents: list[DocumentSource], instructions_supplementaires: str = "") -> str:
+    """Simule la génération de contenu par une IA pour une section."""
+    global _idx_gen
+    if not section: return "Erreur: Section non fournie."
+
+    # Simuler l'utilisation des documents et instructions
+    prompt_simule = f"Génération pour section '{section.titre}'. "
+    if instructions_supplementaires:
+        prompt_simule += f"Instructions: '{instructions_supplementaires}'. "
+    if documents_pertinents:
+        prompt_simule += f"Basé sur les documents: {', '.join([doc.nom_fichier for doc in documents_pertinents])}."
+    else:
+        prompt_simule += "Aucun document spécifique fourni pour cette section."
+
+    # Sauvegarder l'ancien contenu et les instructions qui y ont mené
+    if section.contenu_genere: # S'il y avait déjà un contenu, on le versionne
+        section.ajouter_version_contenu(section.instructions_utilisateur) # Versionne l'état AVANT cette nouvelle génération
+
+    # Générer le nouveau contenu (mock)
+    section.contenu_genere = f"Contenu généré par IA pour '{section.titre}' (basé sur '{prompt_simule.strip()}'):\n{_mock_ia_responses_generation[_idx_gen % len(_mock_ia_responses_generation)]}"
+    _idx_gen += 1
+
+    # Mettre à jour les instructions de la section avec celles qui ont mené à CE contenu
+    section.instructions_utilisateur = instructions_supplementaires # Ou une combinaison des anciennes et nouvelles
+    section.statut_completion = StatutCompletionSection.A_VALIDER # Après génération, le statut passe à "À valider"
+
+    print(f"Contenu IA simulé généré pour la section '{section.titre}'.")
+    return section.contenu_genere
+
+def reescrire_contenu_section_ia_mock(section: SectionLivrable, documents_pertinents: list[DocumentSource], nouvelles_instructions: str) -> str:
+    """Simule la réécriture de contenu par une IA pour une section."""
+    global _idx_ree
+    if not section: return "Erreur: Section non fournie."
+    if not section.contenu_genere: return "Erreur: Pas de contenu à réécrire."
+    if not nouvelles_instructions: return "Erreur: Veuillez fournir des instructions pour la réécriture."
+
+    # Sauvegarder le contenu actuel avant réécriture
+    section.ajouter_version_contenu(section.instructions_utilisateur) # Versionne l'état AVANT cette réécriture
+
+    prompt_simule = f"Réécriture pour section '{section.titre}'. Instructions: '{nouvelles_instructions}'. "
+    if documents_pertinents:
+        prompt_simule += f"En tenant compte des documents: {', '.join([doc.nom_fichier for doc in documents_pertinents])}."
+
+    section.contenu_genere = f"Contenu RÉÉCRIT par IA pour '{section.titre}' (basé sur '{prompt_simule.strip()}'):\n{_mock_ia_responses_reescriture[_idx_ree % len(_mock_ia_responses_reescriture)]}"
+    _idx_ree += 1
+
+    section.instructions_utilisateur = nouvelles_instructions # Mettre à jour avec les dernières instructions
+    section.statut_completion = StatutCompletionSection.A_VALIDER
+
+    print(f"Contenu IA simulé RÉÉCRIT pour la section '{section.titre}'.")
+    return section.contenu_genere
