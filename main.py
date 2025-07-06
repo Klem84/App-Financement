@@ -20,7 +20,7 @@ from services import (
 from donnees_simulees import aides_simulees # Pour Module 2
 # Modèles du Module 3 nécessaires pour le typage et l'instanciation dans main
 from modeles import (
-    LivrableEnGeneration,  # <--- NOM CORRECT ICI
+    LivrableEnGeneration, 
     DocumentSource, 
     PorteeDocument, 
     SectionLivrable, 
