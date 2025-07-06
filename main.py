@@ -20,7 +20,14 @@ from services import (
 from donnees_simulees import aides_simulees # Pour Module 2
 # Modèles du Module 3 nécessaires pour le typage et l'instanciation dans main
 from modeles import (
-    LivrableGen, DocumentSource, PorteeDocument, SectionLivrable, Partie, SousPartie, StatutCompletionSection, VersionSection
+    LivrableEnGeneration,  # <--- NOM CORRECT ICI
+    DocumentSource, 
+    PorteeDocument, 
+    SectionLivrable, 
+    Partie, 
+    SousPartie, 
+    StatutCompletionSection, 
+    VersionSection
 )
 from datetime import datetime
 import time # Pour simuler des délais et rendre la génération d'ID unique plus robuste
